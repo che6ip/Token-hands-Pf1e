@@ -5,6 +5,18 @@
     "LeftHand": "Left hand",
     "Auto": "Auto",
     "EmptyHand": "Empty hand",
-    "NoPermission": "You do not have permission to modify this token."
+    "NoPermission": "You do not have permission to modify this token.",
+    "SearchPlaceholder": "Search items…",
+    "SectionWeapons": "Weapons",
+    "SectionArmor": "Armor & Shields",
+    "SectionEquipment": "Equipment",
+    "SectionImplants": "Implants",
+    "SectionConsumables": "Consumables",
+    "SectionGear": "Gear & Tools",
+    "SectionAmmo": "Ammunition",
+    "SectionMisc": "Miscellaneous",
+    "SectionTradeGoods": "Trade Goods",
+    "SectionContainers": "Containers",
+    "SectionOther": "Other"
   }
 }

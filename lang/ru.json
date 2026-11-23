@@ -5,6 +5,18 @@
     "LeftHand": "Левая рука",
     "Auto": "Авто",
     "EmptyHand": "Пустая рука",
-    "NoPermission": "Нет прав на изменение этого токена."
+    "NoPermission": "Нет прав на изменение этого токена.",
+    "SearchPlaceholder": "Поиск предмета…",
+    "SectionWeapons": "Оружие",
+    "SectionArmor": "Броня и щиты",
+    "SectionEquipment": "Снаряжение",
+    "SectionImplants": "Импланты",
+    "SectionConsumables": "Расходники",
+    "SectionGear": "Снаряжение и инструменты",
+    "SectionAmmo": "Боеприпасы",
+    "SectionMisc": "Разное",
+    "SectionTradeGoods": "Товары",
+    "SectionContainers": "Контейнеры",
+    "SectionOther": "Прочее"
   }
 }

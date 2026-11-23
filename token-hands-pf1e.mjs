@@ -28,7 +28,7 @@ const SHIELD_FALLBACKS = ["icons/svg/shield.svg", "icons/svg/item-bag.svg"];
 
 const MENU_CSS = `
 .token-hands-pf1e-menu {
-  position: fixed; z-index: 100000; min-width: 230px; max-width: 360px;
+  position: fixed; z-index: 100000; min-width: 260px; max-width: 380px;
   max-height: 60vh; overflow-y: auto; padding: 4px;
   background: var(--color-bg, #1a1a1a); color: var(--color-text-primary, #eee);
   border: 1px solid var(--color-border-light-tertiary, #777);
@@ -39,6 +39,15 @@ const MENU_CSS = `
   padding: 4px 8px 6px; font-weight: 600; opacity: .85;
   border-bottom: 1px solid var(--color-border-light-tertiary, #555);
   margin-bottom: 4px;
+}
+.token-hands-pf1e-menu .thpf1e-search {
+  width: 100%; box-sizing: border-box; margin: 0 0 5px; padding: 5px 7px;
+  color: inherit; background: rgba(0, 0, 0, .25);
+  border: 1px solid var(--color-border-light-tertiary, #555); border-radius: 4px;
+}
+.token-hands-pf1e-menu .thpf1e-section {
+  padding: 6px 8px 2px; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .03em; opacity: .6;
 }
 .token-hands-pf1e-menu .thpf1e-entry {
   display: flex; align-items: center; gap: 7px; width: 100%;
@@ -58,10 +67,90 @@ const MENU_CSS = `
 .token-hands-pf1e-menu .thpf1e-entry span {
   overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
 }
+.token-hands-pf1e-menu .thpf1e-entry .thpf1e-qty {
+  margin-left: auto; opacity: .65; font-size: 11px; flex: none;
+}
 .token-hands-pf1e-menu .thpf1e-divider {
   height: 1px; margin: 4px 6px; background: var(--color-border-light-tertiary, #555);
 }
 `;
+
+/** Подтипы добычи, которые PF1e раскладывает по разным вкладкам инвентаря. */
+const GEAR_SUBTYPES = new Set([
+  "gear", "adventuring", "tool", "reagent", "remedy", "herb", "animal", "animalGear",
+]);
+const MISC_SUBTYPES = new Set(["misc", "food", "entertainment", "vehicle"]);
+const TRADE_SUBTYPES = new Set(["tradeGoods", "treasure"]);
+
+const INVENTORY_SECTIONS = [
+  {
+    id: "weapon",
+    labelKey: "PF1.InventoryWeapons",
+    fallbackKey: "SectionWeapons",
+    match: (item) => item.type === "weapon",
+  },
+  {
+    id: "armor",
+    labelKey: "PF1.ArmorOrShield",
+    fallbackKey: "SectionArmor",
+    match: (item) => item.type === "equipment"
+      && ["armor", "shield"].includes(item.system?.subType),
+  },
+  {
+    id: "equipment",
+    labelKey: "PF1.InventoryEquipment",
+    fallbackKey: "SectionEquipment",
+    match: (item) => item.type === "equipment",
+  },
+  {
+    id: "implant",
+    labelKey: "PF1.InventoryImplants",
+    fallbackKey: "SectionImplants",
+    match: (item) => item.type === "implant",
+  },
+  {
+    id: "consumable",
+    labelKey: "PF1.InventoryConsumables",
+    fallbackKey: "SectionConsumables",
+    match: (item) => item.type === "consumable",
+  },
+  {
+    id: "gear",
+    labelKey: "PF1.Subtypes.Item.loot.gear.Plural",
+    fallbackKey: "SectionGear",
+    match: (item) => item.type === "loot" && GEAR_SUBTYPES.has(item.system?.subType),
+  },
+  {
+    id: "ammo",
+    labelKey: "PF1.Subtypes.Item.loot.ammo.Plural",
+    fallbackKey: "SectionAmmo",
+    match: (item) => item.type === "loot" && item.system?.subType === "ammo",
+  },
+  {
+    id: "misc",
+    labelKey: "PF1.Subtypes.Item.loot.misc.Plural",
+    fallbackKey: "SectionMisc",
+    match: (item) => item.type === "loot" && MISC_SUBTYPES.has(item.system?.subType),
+  },
+  {
+    id: "tradeGoods",
+    labelKey: "PF1.Subtypes.Item.loot.tradeGoods.Plural",
+    fallbackKey: "SectionTradeGoods",
+    match: (item) => item.type === "loot" && TRADE_SUBTYPES.has(item.system?.subType),
+  },
+  {
+    id: "container",
+    labelKey: "PF1.InventoryContainers",
+    fallbackKey: "SectionContainers",
+    match: (item) => item.type === "container",
+  },
+  {
+    id: "other",
+    labelKey: "TOKEN-HANDS-PF1E.SectionOther",
+    fallbackKey: "SectionOther",
+    match: () => true,
+  },
+];
 
 let connected = false;
 let activeMenu = null;
@@ -270,9 +359,10 @@ async function setOverride(token, hand, value) {
   else next[hand] = value;
 
   try {
-    if (Object.keys(next).length === 0) {
-      await token.document.unsetFlag(MODULE_ID, FLAG_KEY);
-    } else {
+    // Сначала полностью снимаем флаг: setFlag/update сливают вложенные объекты,
+    // поэтому иначе удалённые руки остаются в старом значении.
+    await token.document.unsetFlag(MODULE_ID, FLAG_KEY);
+    if (Object.keys(next).length > 0) {
       await token.document.setFlag(MODULE_ID, FLAG_KEY, next);
     }
     globalThis.tokenHands?.renderTokenHands?.(token);
@@ -310,10 +400,14 @@ function openHandMenu(event, hand, token) {
   );
   menu.append(title);
 
-  const addEntry = (label, value, img, active) => {
+  const addEntry = (parent, label, value, img, active, item = null, qty = 1) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `thpf1e-entry${active ? " active" : ""}`;
+    if (item) {
+      button.dataset.item = "1";
+      button.dataset.name = String(item.name ?? "").toLowerCase();
+    }
     if (img) {
       const image = document.createElement("img");
       image.src = img;
@@ -323,17 +417,23 @@ function openHandMenu(event, hand, token) {
     const text = document.createElement("span");
     text.textContent = label;
     button.append(text);
+    if (qty > 1) {
+      const quantity = document.createElement("span");
+      quantity.className = "thpf1e-qty";
+      quantity.textContent = `×${qty}`;
+      button.append(quantity);
+    }
     button.addEventListener("click", async (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
       closeHandMenu();
       await setOverride(token, hand, value);
     });
-    menu.append(button);
+    parent.append(button);
   };
 
-  addEntry(game.i18n.localize("TOKEN-HANDS-PF1E.Auto"), undefined, null, current === undefined);
-  addEntry(game.i18n.localize("TOKEN-HANDS-PF1E.EmptyHand"), null, PALM_ICON, current === null);
+  addEntry(menu, game.i18n.localize("TOKEN-HANDS-PF1E.Auto"), undefined, null, current === undefined);
+  addEntry(menu, game.i18n.localize("TOKEN-HANDS-PF1E.EmptyHand"), null, PALM_ICON, current === null);
 
   const divider = document.createElement("div");
   divider.className = "thpf1e-divider";
@@ -342,10 +442,61 @@ function openHandMenu(event, hand, token) {
   const items = [...(actor.items ?? [])]
     .filter((item) => item.isPhysical !== false)
     .filter((item) => Number(item.system?.quantity ?? 1) !== 0)
-    .sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? "")));
+    .sort((a, b) => {
+      const sortA = Number(a.sort) || 0;
+      const sortB = Number(b.sort) || 0;
+      return sortA - sortB || String(a.name ?? "").localeCompare(String(b.name ?? ""));
+    });
 
+  let search = null;
+  if (items.length > 5) {
+    search = document.createElement("input");
+    search.type = "search";
+    search.className = "thpf1e-search";
+    search.placeholder = game.i18n.localize("TOKEN-HANDS-PF1E.SearchPlaceholder");
+    menu.append(search);
+  }
+
+  const groups = new Map(INVENTORY_SECTIONS.map((section) => [section.id, []]));
   for (const item of items) {
-    addEntry(item.name ?? "", item.id, item.img, current === item.id);
+    const section = INVENTORY_SECTIONS.find((entry) => entry.match(item))
+      ?? INVENTORY_SECTIONS[INVENTORY_SECTIONS.length - 1];
+    groups.get(section.id).push(item);
+  }
+
+  for (const section of INVENTORY_SECTIONS) {
+    const list = groups.get(section.id);
+    if (!list?.length) continue;
+
+    const group = document.createElement("div");
+    group.className = "thpf1e-group";
+    group.dataset.section = section.id;
+
+    const header = document.createElement("div");
+    header.className = "thpf1e-section";
+    header.textContent = sectionLabel(section);
+    group.append(header);
+
+    for (const item of list) {
+      const qty = Number(item.system?.quantity ?? 1);
+      addEntry(group, item.name ?? "", item.id, item.img, current === item.id, item, qty);
+    }
+    menu.append(group);
+  }
+
+  if (search) {
+    search.addEventListener("input", () => {
+      const query = search.value.trim().toLowerCase();
+      for (const group of menu.querySelectorAll(".thpf1e-group")) {
+        let visible = 0;
+        for (const entry of group.querySelectorAll(".thpf1e-entry[data-item]")) {
+          const match = !query || String(entry.dataset.name ?? "").includes(query);
+          entry.hidden = !match;
+          if (match) visible += 1;
+        }
+        group.hidden = visible === 0;
+      }
+    });
   }
 
   document.body.append(menu);
@@ -373,6 +524,7 @@ function openHandMenu(event, hand, token) {
   setTimeout(() => {
     document.addEventListener("pointerdown", onPointerDown, true);
     document.addEventListener("keydown", onKeyDown, true);
+    search?.focus();
   }, 0);
 
   menuCleanup = () => {
@@ -380,6 +532,13 @@ function openHandMenu(event, hand, token) {
     document.removeEventListener("keydown", onKeyDown, true);
     document.removeEventListener("contextmenu", onContextMenu, true);
   };
+}
+
+/** Название вкладки инвентаря: системная локализация или запасной ключ модуля. */
+function sectionLabel(section) {
+  const value = game.i18n.localize(section.labelKey);
+  if (value !== section.labelKey) return value;
+  return game.i18n.localize(`TOKEN-HANDS-PF1E.${section.fallbackKey}`);
 }
 
 function closeHandMenu() {
