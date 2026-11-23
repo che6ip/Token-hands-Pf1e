@@ -1,0 +1,41 @@
+{
+  "id": "token-hands-pf1e",
+  "title": "Руки на токене: PF1e",
+  "description": "Показывает на токенах персонажей и NPC Pathfinder 1e, что у них в руках: оружие и щиты. Работает поверх базового модуля «Руки на токене» (token-hands): этот модуль только определяет, какие предметы актёр держит в руках, а квадратики, иконки и клик по ним рисует база.",
+  "version": "1.0.0",
+  "authors": [
+    { "name": "Чешир Шредингера" }
+  ],
+  "url": "https://github.com/che6ip/Token-hands-Pf1e",
+  "license": "MIT",
+  "readme": "README.md",
+  "manifest": "https://github.com/che6ip/Token-hands-Pf1e/releases/latest/download/module.json",
+  "download": "https://github.com/che6ip/Token-hands-Pf1e/releases/latest/download/token-hands-pf1e.zip",
+  "bugs": "https://github.com/che6ip/Token-hands-Pf1e/issues",
+  "compatibility": {
+    "minimum": "13",
+    "verified": "13.351"
+  },
+  "relationships": {
+    "requires": [
+      {
+        "id": "token-hands",
+        "type": "module",
+        "active": true,
+        "compatibility": { "minimum": "1.12.2" }
+      }
+    ],
+    "systems": [
+      {
+        "id": "pf1",
+        "type": "system",
+        "compatibility": { "minimum": "11.11" }
+      }
+    ]
+  },
+  "esmodules": ["token-hands-pf1e.mjs"],
+  "languages": [
+    { "lang": "en", "name": "English", "path": "lang/en.json" },
+    { "lang": "ru", "name": "Русский", "path": "lang/ru.json" }
+  ]
+}
