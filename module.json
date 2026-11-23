@@ -22,7 +22,7 @@
         "id": "token-hands",
         "type": "module",
         "active": true,
-        "compatibility": { "minimum": "1.12.2" }
+        "compatibility": { "minimum": "1.10.1" }
       }
     ],
     "systems": [
