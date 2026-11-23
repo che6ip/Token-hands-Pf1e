@@ -1,5 +1,10 @@
 {
   "TOKEN-HANDS-PF1E": {
-    "Unarmed": "Без оружия"
+    "Unarmed": "Без оружия",
+    "RightHand": "Правая рука",
+    "LeftHand": "Левая рука",
+    "Auto": "Авто",
+    "EmptyHand": "Пустая рука",
+    "NoPermission": "Нет прав на изменение этого токена."
   }
 }

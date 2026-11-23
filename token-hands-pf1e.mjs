@@ -3,23 +3,69 @@
  * Foundry VTT v13, система pf1.
  *
  * Вся отрисовка живёт в базовом модуле «Руки на токене» (token-hands).
- * Здесь только разбор того, что персонаж держит в руках:
+ * Здесь разбор того, что персонаж держит в руках:
  *   - оружие с system.equipped === true;
  *   - щиты (equipment с subType === "shield" и system.equipped === true);
  *   - system.held: "1h" — основная рука, "2h" — двуручное, "oh" — вторая рука.
+ *
+ * Дополнительно:
+ *   - пустая рука показывается ладонью, если вторая рука занята;
+ *   - ПКМ по слоту открывает меню выбора предмета из инвентаря для этой руки.
  */
 
 const MODULE_ID = "token-hands-pf1e";
 const BASE_ID = "token-hands";
 const SYSTEM_ID = "pf1";
+const FLAG_KEY = "held";
 
 /** Типы актёров, у которых есть руки. */
 const HAND_ACTOR_TYPES = new Set(["character", "npc"]);
 
+const PALM_ICON = "systems/pf1/icons/actions/hand.svg";
+const PALM_FALLBACKS = [PALM_ICON, "icons/svg/combat.svg"];
 const WEAPON_FALLBACKS = ["icons/svg/sword.svg", "icons/svg/item-bag.svg"];
 const SHIELD_FALLBACKS = ["icons/svg/shield.svg", "icons/svg/item-bag.svg"];
 
+const MENU_CSS = `
+.token-hands-pf1e-menu {
+  position: fixed; z-index: 100000; min-width: 230px; max-width: 360px;
+  max-height: 60vh; overflow-y: auto; padding: 4px;
+  background: var(--color-bg, #1a1a1a); color: var(--color-text-primary, #eee);
+  border: 1px solid var(--color-border-light-tertiary, #777);
+  border-radius: 6px; box-shadow: 0 6px 18px rgba(0, 0, 0, .55);
+  font-size: 13px;
+}
+.token-hands-pf1e-menu .thpf1e-title {
+  padding: 4px 8px 6px; font-weight: 600; opacity: .85;
+  border-bottom: 1px solid var(--color-border-light-tertiary, #555);
+  margin-bottom: 4px;
+}
+.token-hands-pf1e-menu .thpf1e-entry {
+  display: flex; align-items: center; gap: 7px; width: 100%;
+  padding: 5px 8px; border: 0; border-radius: 4px; background: transparent;
+  color: inherit; text-align: left; cursor: pointer;
+}
+.token-hands-pf1e-menu .thpf1e-entry:hover {
+  background: var(--color-hover-bg, rgba(255, 255, 255, .12));
+}
+.token-hands-pf1e-menu .thpf1e-entry.active {
+  background: var(--color-active-bg, rgba(255, 255, 255, .18));
+  outline: 1px solid var(--color-border-highlight, #c9a227);
+}
+.token-hands-pf1e-menu .thpf1e-entry img {
+  width: 20px; height: 20px; object-fit: contain; flex: none;
+}
+.token-hands-pf1e-menu .thpf1e-entry span {
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.token-hands-pf1e-menu .thpf1e-divider {
+  height: 1px; margin: 4px 6px; background: var(--color-border-light-tertiary, #555);
+}
+`;
+
 let connected = false;
+let activeMenu = null;
+let menuCleanup = null;
 
 /* -------------------------------------------------------------------------- */
 /*  Подключение к базе                                                        */
@@ -44,6 +90,7 @@ Hooks.once("ready", () => {
   if (game.system?.id !== SYSTEM_ID) return;
   if (!game.modules.get(BASE_ID)?.active) return;
   connectToBase();
+  injectStyles();
   console.log(`[${MODULE_ID}] готов, версия ${game.modules.get(MODULE_ID)?.version}`);
 });
 
@@ -53,6 +100,7 @@ function connectToBase() {
   const provider = {
     id: "pf1e",
     resolveHands,
+    onSlotContextMenu,
     iconFallbacks: ["icons/svg/item-bag.svg"],
   };
 
@@ -80,40 +128,56 @@ function connectToBase() {
 /**
  * Руки актёра для базы.
  * @param {Actor} actor
+ * @param {Token|null} token
  * @returns {{left: object|null, right: object|null}|null}
  */
-function resolveHands(actor) {
+function resolveHands(actor, token = null) {
   if (!actor || !HAND_ACTOR_TYPES.has(actor.type)) return null;
 
   const held = collectHeldItems(actor);
   const weapons = held.filter((entry) => entry.kind === "weapon");
   const shields = held.filter((entry) => entry.kind === "shield");
 
-  // Двуручное оружие: правая рука — активная, левая — затемнённая копия.
+  let rightItem = null;
+  let leftItem = null;
+  let leftDim = false;
+
   const twoHanded = weapons.find((entry) => entry.twoHanded);
   if (twoHanded) {
-    return {
-      right: makeSlot(twoHanded.item, false),
-      left: makeSlot(twoHanded.item, true),
-    };
+    rightItem = twoHanded.item;
+    leftItem = twoHanded.item;
+    leftDim = true;
+  } else {
+    const mainWeapons = weapons.filter((entry) => !entry.offhand);
+    const offhandWeapons = weapons.filter((entry) => entry.offhand);
+    rightItem = mainWeapons[0]?.item ?? null;
+    leftItem = offhandWeapons[0]?.item ?? mainWeapons[1]?.item ?? shields[0]?.item ?? null;
   }
 
-  const mainWeapons = weapons.filter((entry) => !entry.offhand);
-  const offhandWeapons = weapons.filter((entry) => entry.offhand);
+  // Ручной выбор предмета для руки перекрывает автоматику.
+  const overrides = getOverrides(token);
+  const hasRight = Object.prototype.hasOwnProperty.call(overrides, "right");
+  const hasLeft = Object.prototype.hasOwnProperty.call(overrides, "left");
 
-  const main = mainWeapons[0] ?? null;
-  const secondary = mainWeapons[1] ?? null;
-  const offhand = offhandWeapons[0] ?? null;
-  const shield = shields[0] ?? null;
+  if (twoHanded && (hasRight || hasLeft)) {
+    // Ручной выбор ломает автоматическую пару двуручного оружия.
+    rightItem = null;
+    leftItem = null;
+    leftDim = false;
+  }
 
-  const rightItem = main?.item ?? null;
-  const leftItem = offhand?.item ?? secondary?.item ?? shield?.item ?? null;
+  if (hasRight) rightItem = resolveOverrideItem(actor, overrides.right, rightItem);
+  if (hasLeft) {
+    leftItem = resolveOverrideItem(actor, overrides.left, leftItem);
+    leftDim = false;
+  }
 
-  if (!rightItem && !leftItem) return null;
+  const hasOverrides = hasRight || hasLeft;
+  if (!rightItem && !leftItem && !hasOverrides) return null;
 
   return {
-    right: rightItem ? makeSlot(rightItem, false) : null,
-    left: leftItem ? makeSlot(leftItem, false) : null,
+    right: rightItem ? makeItemSlot(rightItem, false) : makePalmSlot(),
+    left: leftItem ? makeItemSlot(leftItem, leftDim) : makePalmSlot(),
   };
 }
 
@@ -151,7 +215,7 @@ function collectHeldItems(actor) {
   });
 }
 
-function makeSlot(item, dim) {
+function makeItemSlot(item, dim) {
   const isShield = item.type === "equipment" && item.system?.subType === "shield";
   return {
     img: item.img || (isShield ? SHIELD_FALLBACKS[0] : WEAPON_FALLBACKS[0]),
@@ -160,6 +224,177 @@ function makeSlot(item, dim) {
     dim: !!dim,
     fallbacks: [...(isShield ? SHIELD_FALLBACKS : WEAPON_FALLBACKS)],
   };
+}
+
+function makePalmSlot() {
+  return {
+    img: PALM_ICON,
+    name: game.i18n.localize("TOKEN-HANDS-PF1E.EmptyHand"),
+    item: null,
+    dim: false,
+    empty: true,
+    fallbacks: [...PALM_FALLBACKS],
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Ручной выбор предмета для руки                                             */
+/* -------------------------------------------------------------------------- */
+
+/** Флаги токена: { right?: itemId|null, left?: itemId|null } */
+function getOverrides(token) {
+  try {
+    const value = token?.document?.getFlag?.(MODULE_ID, FLAG_KEY)
+      ?? token?.document?.flags?.[MODULE_ID]?.[FLAG_KEY];
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+function resolveOverrideItem(actor, value, fallback) {
+  if (value === null) return null;
+  if (typeof value === "string") return actor.items.get(value) ?? fallback;
+  return fallback;
+}
+
+async function setOverride(token, hand, value) {
+  if (hand !== "left" && hand !== "right") return;
+  if (!game.user.isGM && !token?.document?.isOwner) {
+    ui.notifications.warn(game.i18n.localize("TOKEN-HANDS-PF1E.NoPermission"));
+    return;
+  }
+
+  const next = { ...getOverrides(token) };
+  if (value === undefined) delete next[hand];
+  else next[hand] = value;
+
+  try {
+    if (Object.keys(next).length === 0) {
+      await token.document.unsetFlag(MODULE_ID, FLAG_KEY);
+    } else {
+      await token.document.setFlag(MODULE_ID, FLAG_KEY, next);
+    }
+    globalThis.tokenHands?.renderTokenHands?.(token);
+  } catch (err) {
+    console.error(`[${MODULE_ID}] не удалось сохранить выбор предмета для руки`, err);
+  }
+}
+
+function onSlotContextMenu(event, slot, token) {
+  if (!token?.actor) return false;
+  if (!game.user.isGM && !token.document?.isOwner) return false;
+
+  const hand = slot?.key === "left" ? "left" : slot?.key === "right" ? "right" : null;
+  if (!hand) return false;
+
+  openHandMenu(event, hand, token);
+  return true;
+}
+
+function openHandMenu(event, hand, token) {
+  closeHandMenu();
+  injectStyles();
+
+  const actor = token.actor;
+  const overrides = getOverrides(token);
+  const current = Object.prototype.hasOwnProperty.call(overrides, hand) ? overrides[hand] : undefined;
+
+  const menu = document.createElement("div");
+  menu.className = "token-hands-pf1e-menu";
+
+  const title = document.createElement("div");
+  title.className = "thpf1e-title";
+  title.textContent = game.i18n.localize(
+    hand === "right" ? "TOKEN-HANDS-PF1E.RightHand" : "TOKEN-HANDS-PF1E.LeftHand"
+  );
+  menu.append(title);
+
+  const addEntry = (label, value, img, active) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `thpf1e-entry${active ? " active" : ""}`;
+    if (img) {
+      const image = document.createElement("img");
+      image.src = img;
+      image.alt = "";
+      button.append(image);
+    }
+    const text = document.createElement("span");
+    text.textContent = label;
+    button.append(text);
+    button.addEventListener("click", async (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      closeHandMenu();
+      await setOverride(token, hand, value);
+    });
+    menu.append(button);
+  };
+
+  addEntry(game.i18n.localize("TOKEN-HANDS-PF1E.Auto"), undefined, null, current === undefined);
+  addEntry(game.i18n.localize("TOKEN-HANDS-PF1E.EmptyHand"), null, PALM_ICON, current === null);
+
+  const divider = document.createElement("div");
+  divider.className = "thpf1e-divider";
+  menu.append(divider);
+
+  const items = [...(actor.items ?? [])]
+    .filter((item) => item.isPhysical !== false)
+    .filter((item) => Number(item.system?.quantity ?? 1) !== 0)
+    .sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? "")));
+
+  for (const item of items) {
+    addEntry(item.name ?? "", item.id, item.img, current === item.id);
+  }
+
+  document.body.append(menu);
+
+  const native = event?.nativeEvent ?? event;
+  const x = Number(native?.clientX ?? native?.pageX ?? 0);
+  const y = Number(native?.clientY ?? native?.pageY ?? 0);
+  const rect = menu.getBoundingClientRect();
+  menu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - rect.width - 8))}px`;
+  menu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - rect.height - 8))}px`;
+
+  activeMenu = menu;
+
+  const onPointerDown = (ev) => {
+    if (!menu.contains(ev.target)) closeHandMenu();
+  };
+  const onKeyDown = (ev) => {
+    if (ev.key === "Escape") closeHandMenu();
+  };
+  const onContextMenu = (ev) => ev.preventDefault();
+
+  // Перехватываем contextmenu сразу, чтобы браузер не открыл своё меню.
+  document.addEventListener("contextmenu", onContextMenu, true);
+
+  setTimeout(() => {
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown, true);
+  }, 0);
+
+  menuCleanup = () => {
+    document.removeEventListener("pointerdown", onPointerDown, true);
+    document.removeEventListener("keydown", onKeyDown, true);
+    document.removeEventListener("contextmenu", onContextMenu, true);
+  };
+}
+
+function closeHandMenu() {
+  if (activeMenu) activeMenu.remove();
+  activeMenu = null;
+  menuCleanup?.();
+  menuCleanup = null;
+}
+
+function injectStyles() {
+  if (document.getElementById(`${MODULE_ID}-styles`) || !document.head) return;
+  const style = document.createElement("style");
+  style.id = `${MODULE_ID}-styles`;
+  style.textContent = MENU_CSS;
+  document.head.append(style);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -171,5 +406,10 @@ Hooks.once("ready", () => {
   globalThis.tokenHandsPf1e = {
     resolveHands,
     collectHeldItems,
+    getOverrides,
+    setOverride,
+    onSlotContextMenu,
+    openHandMenu,
+    closeHandMenu,
   };
 });

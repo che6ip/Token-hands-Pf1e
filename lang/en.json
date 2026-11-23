@@ -1,5 +1,10 @@
 {
   "TOKEN-HANDS-PF1E": {
-    "Unarmed": "Unarmed"
+    "Unarmed": "Unarmed",
+    "RightHand": "Right hand",
+    "LeftHand": "Left hand",
+    "Auto": "Auto",
+    "EmptyHand": "Empty hand",
+    "NoPermission": "You do not have permission to modify this token."
   }
 }
