@@ -166,6 +166,8 @@ Hooks.once("init", () => {
     return;
   }
 
+  registerSettings();
+
   const base = game.modules.get(BASE_ID);
   if (!base?.active) {
     console.warn(`[${MODULE_ID}] Не включён базовый модуль «Руки на токене» (${BASE_ID}) — слотов не будет.`);
@@ -183,9 +185,21 @@ Hooks.once("ready", () => {
   console.log(`[${MODULE_ID}] готов, версия ${game.modules.get(MODULE_ID)?.version}`);
 });
 
+function registerSettings() {
+  game.settings.register(MODULE_ID, "emptyHandIcon", {
+    name: "TOKEN-HANDS-PF1E.Settings.EmptyHandIconName",
+    hint: "TOKEN-HANDS-PF1E.Settings.EmptyHandIconHint",
+    scope: "client",
+    config: true,
+    type: String,
+    default: PALM_ICON,
+    filePicker: "image",
+    onChange: () => globalThis.tokenHands?.refreshAllTokens?.(),
+  });
+}
+
 function connectToBase() {
   if (connected) return true;
-
   const provider = {
     id: "pf1e",
     resolveHands,
@@ -243,17 +257,10 @@ function resolveHands(actor, token = null) {
     leftItem = offhandWeapons[0]?.item ?? mainWeapons[1]?.item ?? shields[0]?.item ?? null;
   }
 
-  // Ручной выбор предмета для руки перекрывает автоматику.
+  // Ручной выбор предмета для руки перекрывает автоматику только для этой руки.
   const overrides = getOverrides(token);
   const hasRight = Object.prototype.hasOwnProperty.call(overrides, "right");
   const hasLeft = Object.prototype.hasOwnProperty.call(overrides, "left");
-
-  if (twoHanded && (hasRight || hasLeft)) {
-    // Ручной выбор ломает автоматическую пару двуручного оружия.
-    rightItem = null;
-    leftItem = null;
-    leftDim = false;
-  }
 
   if (hasRight) rightItem = resolveOverrideItem(actor, overrides.right, rightItem);
   if (hasLeft) {
@@ -315,14 +322,23 @@ function makeItemSlot(item, dim) {
   };
 }
 
+function emptyHandIcon() {
+  try {
+    return game.settings.get(MODULE_ID, "emptyHandIcon") || PALM_ICON;
+  } catch {
+    return PALM_ICON;
+  }
+}
+
 function makePalmSlot() {
+  const icon = emptyHandIcon();
   return {
-    img: PALM_ICON,
+    img: icon,
     name: game.i18n.localize("TOKEN-HANDS-PF1E.EmptyHand"),
     item: null,
     dim: false,
     empty: true,
-    fallbacks: [...PALM_FALLBACKS],
+    fallbacks: PALM_FALLBACKS.filter((path) => path !== icon),
   };
 }
 
@@ -433,7 +449,7 @@ function openHandMenu(event, hand, token) {
   };
 
   addEntry(menu, game.i18n.localize("TOKEN-HANDS-PF1E.Auto"), undefined, null, current === undefined);
-  addEntry(menu, game.i18n.localize("TOKEN-HANDS-PF1E.EmptyHand"), null, PALM_ICON, current === null);
+  addEntry(menu, game.i18n.localize("TOKEN-HANDS-PF1E.EmptyHand"), null, emptyHandIcon(), current === null);
 
   const divider = document.createElement("div");
   divider.className = "thpf1e-divider";
@@ -570,5 +586,6 @@ Hooks.once("ready", () => {
     onSlotContextMenu,
     openHandMenu,
     closeHandMenu,
+    emptyHandIcon,
   };
 });

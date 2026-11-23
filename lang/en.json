@@ -7,6 +7,10 @@
     "EmptyHand": "Empty hand",
     "NoPermission": "You do not have permission to modify this token.",
     "SearchPlaceholder": "Search items…",
+    "Settings": {
+      "EmptyHandIconName": "Empty hand icon",
+      "EmptyHandIconHint": "Image for a hand without an item. Defaults to the Pathfinder 1e hand icon."
+    },
     "SectionWeapons": "Weapons",
     "SectionArmor": "Armor & Shields",
     "SectionEquipment": "Equipment",

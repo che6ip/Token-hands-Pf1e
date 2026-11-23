@@ -7,6 +7,10 @@
     "EmptyHand": "Пустая рука",
     "NoPermission": "Нет прав на изменение этого токена.",
     "SearchPlaceholder": "Поиск предмета…",
+    "Settings": {
+      "EmptyHandIconName": "Иконка пустой руки",
+      "EmptyHandIconHint": "Картинка для руки без предмета. По умолчанию — иконка ладони Pathfinder 1e."
+    },
     "SectionWeapons": "Оружие",
     "SectionArmor": "Броня и щиты",
     "SectionEquipment": "Снаряжение",
